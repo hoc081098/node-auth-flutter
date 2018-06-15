@@ -1,3 +1,4 @@
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:node_auth/api_service.dart';
@@ -125,8 +126,13 @@ class _MyLoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
                 splashColor: new Color(0xFF00e676),
               )
-            : new CircularProgressIndicator(
-                valueColor: new AlwaysStoppedAnimation<Color>(Colors.white),
+            : new Container(
+                padding:
+                    new EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
+                child: new CircularProgressIndicator(
+                  strokeWidth: 2.0,
+                  valueColor: new AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
               ),
       ),
     );
@@ -137,6 +143,18 @@ class _MyLoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       },
       child: new Text(
         "Don't have an account? Sign up",
+        style: new TextStyle(
+          color: Colors.white70,
+          fontStyle: FontStyle.italic,
+          fontSize: 14.0,
+        ),
+      ),
+    );
+
+    final forgotPassword = new FlatButton(
+      onPressed: _resetPassword,
+      child: new Text(
+        "Forgot password?",
         style: new TextStyle(
           color: Colors.white70,
           fontStyle: FontStyle.italic,
@@ -178,6 +196,10 @@ class _MyLoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   padding: const EdgeInsets.all(8.0),
                   child: needAnAccount,
                 ),
+                new Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: forgotPassword,
+                ),
               ],
             ),
           ),
@@ -201,8 +223,7 @@ class _MyLoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     apiService.loginUser(_email, _password).then((Response response) {
       _loginButtonController.reverse();
       _scaffoldKey.currentState.showSnackBar(
-        new SnackBar(
-            content: new Text(response.message)),
+        new SnackBar(content: new Text(response.message)),
       );
       Navigator.of(context).pushReplacement(
             new MaterialPageRoute(
@@ -218,6 +239,232 @@ class _MyLoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       _scaffoldKey.currentState.showSnackBar(
         new SnackBar(content: new Text(message)),
       );
+    });
+  }
+
+  _resetPassword() {
+    showDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (context) {
+        return new ResetPasswordDialog();
+      },
+    );
+  }
+}
+
+class ResetPasswordDialog extends StatefulWidget {
+  @override
+  _ResetPasswordDialogState createState() => _ResetPasswordDialogState();
+}
+
+class _ResetPasswordDialogState extends State<ResetPasswordDialog> {
+  String _email, _token, _newPassword;
+
+  final _formKey = new GlobalKey<FormState>();
+  final ApiService _apiService = new ApiService();
+
+  bool _isInit;
+  bool _obscurePassword;
+  bool _isLoading;
+  String _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _isInit = true;
+    _obscurePassword = true;
+    _isLoading = false;
+    _message = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final emailTextField = new TextFormField(
+      autocorrect: true,
+      autovalidate: true,
+      decoration: new InputDecoration(
+        prefixIcon: new Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8.0),
+          child: new Icon(Icons.email),
+        ),
+        labelText: 'Email',
+      ),
+      keyboardType: TextInputType.emailAddress,
+      maxLines: 1,
+      style: new TextStyle(fontSize: 16.0),
+      onSaved: (s) => _email = s,
+      validator: (s) => _MyLoginPageState.emailRegExp.hasMatch(s)
+          ? null
+          : 'Invalid email address!',
+    );
+
+    final tokenTextField = new TextFormField(
+      autocorrect: true,
+      autovalidate: true,
+      decoration: new InputDecoration(
+        prefixIcon: new Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8.0),
+          child: new Icon(Icons.email),
+        ),
+        labelText: 'Token',
+      ),
+      keyboardType: TextInputType.emailAddress,
+      maxLines: 1,
+      style: new TextStyle(fontSize: 16.0),
+      onSaved: (s) => _token = s,
+    );
+
+    final passwordTextField = new TextFormField(
+      autocorrect: true,
+      autovalidate: true,
+      obscureText: _obscurePassword,
+      decoration: new InputDecoration(
+        suffixIcon: new IconButton(
+          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          icon: new Icon(
+              _obscurePassword ? Icons.visibility_off : Icons.visibility),
+          iconSize: 18.0,
+        ),
+        labelText: 'Password',
+        prefixIcon: new Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8.0),
+          child: new Icon(Icons.lock),
+        ),
+      ),
+      keyboardType: TextInputType.text,
+      maxLines: 1,
+      style: new TextStyle(fontSize: 16.0),
+      onSaved: (s) => _newPassword = s,
+      validator: (s) => s.length < 6 ? "Minimum length of password is 6" : null,
+    );
+
+    return new AlertDialog(
+      title: new Text('Reset password'),
+      content: new SingleChildScrollView(
+        child: new ListBody(
+          children: <Widget>[
+            new Form(
+              autovalidate: true,
+              key: _formKey,
+              child: new Column(
+                children: <Widget>[
+                  new Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: emailTextField,
+                  ),
+                  _isInit
+                      ? new Container()
+                      : new Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: tokenTextField,
+                        ),
+                  _isInit
+                      ? new Container()
+                      : new Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: passwordTextField,
+                        ),
+                  new Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: _isLoading
+                        ? new CircularProgressIndicator()
+                        : _message != null
+                            ? new Text(
+                                _message,
+                                style: new TextStyle(
+                                  fontSize: 14.0,
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.amber,
+                                ),
+                              )
+                            : new Container(),
+                  ),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        new FlatButton(
+          child: new Text('Cancel'),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
+        new FlatButton(
+          child: new Text('OK'),
+          onPressed: _onPressed,
+        ),
+      ],
+    );
+  }
+
+  _onPressed() {
+    if (!_formKey.currentState.validate()) {
+      setState(() => _message = 'Invalid information');
+      new Future.delayed(Duration(seconds: 1))
+          .then((_) => setState(() => _message = null));
+      return;
+    }
+
+    _formKey.currentState.save();
+    setState(() {
+      _isLoading = true;
+    });
+
+    if (_isInit) {
+      _sendResetEmail();
+    } else {
+      _resetPassword();
+    }
+  }
+
+  _sendResetEmail() {
+    print("send reset email...");
+
+    _apiService.resetPassword(_email).then((response) {
+      setState(() {
+        _isInit = _isLoading = false;
+        _message = response.message;
+      });
+      new Future.delayed(Duration(seconds: 1))
+          .then((_) => setState(() => _message = null));
+    }).catchError((e) {
+      final message =
+          e is MyHttpException ? e.message : "An unknown error occurred";
+      setState(() {
+        _isLoading = false;
+        _message = message;
+      });
+      new Future.delayed(Duration(seconds: 1))
+          .then((_) => setState(() => _message = null));
+    });
+  }
+
+  _resetPassword() {
+    print("reset password...");
+
+    _apiService
+        .resetPassword(_email, newPassword: _newPassword, token: _token)
+        .then((response) {
+      setState(() {
+        _isLoading = false;
+        _isInit = true;
+        _message = response.message;
+      });
+      new Future.delayed(Duration(seconds: 1))
+          .then((_) => Navigator.of(context).pop());
+    }).catchError((e) {
+      final message =
+          e is MyHttpException ? e.message : "An unknown error occurred";
+      setState(() {
+        _isLoading = false;
+        _message = message;
+      });
+      new Future.delayed(Duration(seconds: 1))
+          .then((_) => setState(() => _message = null));
     });
   }
 }

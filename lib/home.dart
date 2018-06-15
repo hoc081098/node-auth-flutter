@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:node_auth/api_service.dart';
 import 'package:node_auth/main.dart';
+
+import 'package:image_picker/image_picker.dart';
+
 
 class HomePage extends StatefulWidget {
   final String token;
@@ -18,12 +23,6 @@ class _HomePageState extends State<HomePage> {
   ApiService _apiService;
 
   final _scaffoldKey = new GlobalKey<ScaffoldState>();
-  final _formKey = new GlobalKey<FormState>();
-
-  bool _obscurePassword = true;
-  bool _obscureNewPassword = true;
-  String _password, _newPassword;
-  bool _isLoading = false;
 
   @override
   void initState() {
@@ -58,27 +57,51 @@ class _HomePageState extends State<HomePage> {
             new Card(
               color: Colors.black.withOpacity(0.5),
               child: new Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                padding: const EdgeInsets.all(8.0),
                 child: new Column(
                   children: <Widget>[
-                    ListTile(
-                      leading: Icon(Icons.person),
-                      title: Text(
-                        _user?.name ?? "loading...",
-                        style: new TextStyle(
-                          fontSize: 24.0,
-                          fontWeight: FontWeight.w600,
+                    new Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        ClipOval(
+                          child: new GestureDetector(
+                            child: _user?.imageUrl != null
+                                ? Image.network(
+                                    new Uri.https(
+                                            ApiService.baseUrl, _user?.imageUrl)
+                                        .toString(),
+                                    fit: BoxFit.cover,
+                                    width: 90.0,
+                                    height: 90.0,
+                                  )
+                                : new Image.asset(
+                                    'assets/user.png',
+                                    width: 90.0,
+                                    height: 90.0,
+                                  ),
+                            onTap: _pickAndUploadImage,
+                          ),
                         ),
-                      ),
-                      subtitle: Text(
-                        _user?.email ?? "loading...",
-                        style: new TextStyle(
-                            fontSize: 14.0,
-                            fontWeight: FontWeight.w400,
-                            fontStyle: FontStyle.italic),
-                      ),
+                        new Expanded(
+                          child: ListTile(
+                            title: Text(
+                              _user?.name ?? "loading...",
+                              style: new TextStyle(
+                                fontSize: 24.0,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              "${_user?.email ?? "loading..."}\n$_createdAt",
+                              style: new TextStyle(
+                                  fontSize: 14.0,
+                                  fontWeight: FontWeight.w400,
+                                  fontStyle: FontStyle.italic),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    new Text(_createdAt),
                   ],
                 ),
               ),
@@ -88,7 +111,9 @@ class _HomePageState extends State<HomePage> {
               margin: new EdgeInsets.only(left: 8.0, right: 8.0, top: 16.0),
               width: double.infinity,
               child: new RaisedButton.icon(
-                onPressed: _changePassword,
+                onPressed: () {
+                  _showChangePassword();
+                },
                 label: new Text('Change password'),
                 icon: new Icon(Icons.lock_outline),
                 color: Theme.of(context).backgroundColor,
@@ -115,7 +140,6 @@ class _HomePageState extends State<HomePage> {
                 splashColor: Colors.white.withOpacity(0.5),
               ),
             ),
-            _isLoading ? new CircularProgressIndicator() : new Container(),
           ],
         ),
       ),
@@ -128,6 +152,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _user = user;
         _createdAt = user.createdAt.toString();
+        debugPrint("getUserInformation $user");
       });
     } on MyHttpException catch (e) {
       _scaffoldKey.currentState.showSnackBar(
@@ -140,134 +165,230 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  _changePassword() {
-    _scaffoldKey.currentState.showBottomSheet(
-      (context) {
-        final passwordTextField = new TextFormField(
-          autocorrect: true,
-          autovalidate: true,
-          obscureText: _obscurePassword,
-          decoration: new InputDecoration(
-            suffixIcon: new IconButton(
-              onPressed: () =>
-                  setState(() => _obscurePassword = !_obscurePassword),
-              icon: new Icon(
-                  _obscurePassword ? Icons.visibility_off : Icons.visibility),
-              iconSize: 18.0,
-            ),
-            labelText: 'Password',
-            prefixIcon: new Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8.0),
-              child: new Icon(Icons.lock),
-            ),
-          ),
-          keyboardType: TextInputType.text,
-          maxLines: 1,
-          style: new TextStyle(fontSize: 16.0),
-          onSaved: (s) => _password = s,
-          validator: (s) =>
-              s.length < 6 ? "Minimum length of password is 6" : null,
-        );
+  _showChangePassword() {
+    _scaffoldKey.currentState.showBottomSheet((context) {
+      return new ChangePasswordBottomSheet(
+        email: _email,
+        token: _token,
+      );
+    });
+  }
 
-        final newPasswordTextField = new TextFormField(
-          autocorrect: true,
-          autovalidate: true,
-          obscureText: _obscureNewPassword,
-          decoration: new InputDecoration(
-            suffixIcon: new IconButton(
-              onPressed: () =>
-                  setState(() => _obscureNewPassword = !_obscureNewPassword),
-              icon: new Icon(_obscureNewPassword
-                  ? Icons.visibility_off
-                  : Icons.visibility),
-              iconSize: 18.0,
-            ),
-            labelText: 'Password',
-            prefixIcon: new Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8.0),
-              child: new Icon(Icons.lock),
-            ),
-          ),
-          keyboardType: TextInputType.text,
-          maxLines: 1,
-          style: new TextStyle(fontSize: 16.0),
-          onSaved: (s) => _newPassword = s,
-          validator: (s) =>
-              s.length < 6 ? "Minimum length of password is 6" : null,
-        );
+  _pickAndUploadImage() async {
+    try {
+      final imageFile = await ImagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 720.0,
+        maxHeight: 720.0,
+      );
+      final user = await _apiService.uploadImage(imageFile, _email);
+      _scaffoldKey.currentState.showSnackBar(
+        new SnackBar(
+          content: new Text('Changed avatar successfully!'),
+        ),
+      );
+      setState(() {
+        _user = user;
+        debugPrint('After change avatar $user');
+      });
+    } on MyHttpException catch (e) {
+      _scaffoldKey.currentState.showSnackBar(
+        new SnackBar(
+          content: new Text(e.message),
+        ),
+      );
+    } catch (e) {
+      _scaffoldKey.currentState.showSnackBar(
+        new SnackBar(content: new Text('An unknown error occurred!')),
+      );
+    }
+  }
+}
 
-        final changePasswordButton = new RaisedButton(
-          color: Colors.teal.shade400,
-          onPressed: () async {
-            Navigator.pop(context);
-            setState(() => _isLoading = true);
+class ChangePasswordBottomSheet extends StatefulWidget {
+  final String email;
+  final String token;
 
-            if (!_formKey.currentState.validate()) {
-              _scaffoldKey.currentState.showSnackBar(new SnackBar(
-                content: new Text('Invalid information'),
-              ));
-              return;
-            }
+  const ChangePasswordBottomSheet({Key key, this.email, this.token})
+      : super(key: key);
 
-            debugPrint("$_password|$_newPassword");
+  @override
+  _ChangePasswordBottomSheetState createState() =>
+      _ChangePasswordBottomSheetState();
+}
 
-            try {
-              final response = await _apiService.changePassword(
-                  _email, _password, _newPassword, _token);
-              setState(() => _isLoading = false);
-              
-              _scaffoldKey.currentState.showSnackBar(new SnackBar(
-                content: new Text(response.message),
-              ));
-            } on MyHttpException catch (e) {
-              setState(() => _isLoading = false);
+class _ChangePasswordBottomSheetState extends State<ChangePasswordBottomSheet> {
+  final _formKey = new GlobalKey<FormState>();
+  ApiService _apiService;
+  bool _obscurePassword;
+  bool _obscureNewPassword;
+  String _password, _newPassword;
+  bool _isLoading;
+  String _msg;
 
-              _scaffoldKey.currentState.showSnackBar(new SnackBar(
-                content: new Text(e.message),
-              ));
-            } catch (e) {
-              setState(() => _isLoading = false);
+  String _token, _email;
 
-              _scaffoldKey.currentState.showSnackBar(new SnackBar(
-                content: new Text('An unknown error occurred'),
-              ));
-            }
-          },
-          child: new Text(
-            "Change password",
-            style: TextStyle(fontSize: 16.0),
-          ),
-        );
+  @override
+  void initState() {
+    super.initState();
+    _email = widget.email;
+    _token = widget.token;
+    _apiService = new ApiService();
+    _isLoading = false;
+    _obscurePassword = true;
+    _obscureNewPassword = true;
+  }
 
-        return new Container(
-          decoration: new BoxDecoration(
-            borderRadius: new BorderRadius.only(
-              topLeft: new Radius.circular(8.0),
-              topRight: new Radius.circular(8.0),
-            ),
-          ),
-          child: new Form(
-            key: _formKey,
-            child: new Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                new Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: passwordTextField,
-                ),
-                new Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: newPasswordTextField,
-                ),
-                new Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: changePasswordButton,
-                )
-              ],
-            ),
-          ),
-        );
-      },
+  @override
+  Widget build(BuildContext context) {
+    final passwordTextField = new TextFormField(
+      autocorrect: true,
+      autovalidate: true,
+      obscureText: _obscurePassword,
+      decoration: new InputDecoration(
+        suffixIcon: new IconButton(
+          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          icon: new Icon(
+              _obscurePassword ? Icons.visibility_off : Icons.visibility),
+          iconSize: 18.0,
+        ),
+        labelText: 'Old password',
+        prefixIcon: new Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8.0),
+          child: new Icon(Icons.lock),
+        ),
+      ),
+      keyboardType: TextInputType.text,
+      maxLines: 1,
+      style: new TextStyle(fontSize: 16.0),
+      onSaved: (s) => _password = s,
+      validator: (s) => s.length < 6 ? "Minimum length of password is 6" : null,
     );
+
+    final newPasswordTextField = new TextFormField(
+      autocorrect: true,
+      autovalidate: true,
+      obscureText: _obscureNewPassword,
+      decoration: new InputDecoration(
+        suffixIcon: new IconButton(
+          onPressed: () =>
+              setState(() => _obscureNewPassword = !_obscureNewPassword),
+          icon: new Icon(
+              _obscureNewPassword ? Icons.visibility_off : Icons.visibility),
+          iconSize: 18.0,
+        ),
+        labelText: 'New password',
+        prefixIcon: new Padding(
+          padding: const EdgeInsetsDirectional.only(end: 8.0),
+          child: new Icon(Icons.lock),
+        ),
+      ),
+      keyboardType: TextInputType.text,
+      maxLines: 1,
+      style: new TextStyle(fontSize: 16.0),
+      onSaved: (s) => _newPassword = s,
+      validator: (s) => s.length < 6 ? "Minimum length of password is 6" : null,
+    );
+
+    final changePasswordButton = _isLoading
+        ? new CircularProgressIndicator()
+        : _msg != null
+            ? new Text(
+                _msg,
+                style: new TextStyle(
+                  fontSize: 14.0,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.amber,
+                ),
+              )
+            : new RaisedButton(
+                color: Colors.teal.shade400,
+                onPressed: _changePassword,
+                child: new Text(
+                  "Change password",
+                  style: TextStyle(fontSize: 16.0),
+                ),
+              );
+
+    return new Container(
+      decoration: new BoxDecoration(
+        borderRadius: new BorderRadius.only(
+          topLeft: new Radius.circular(8.0),
+          topRight: new Radius.circular(8.0),
+        ),
+      ),
+      child: new Form(
+        key: _formKey,
+        child: new Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            new Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: passwordTextField,
+            ),
+            new Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: newPasswordTextField,
+            ),
+            new Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: changePasswordButton,
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  _changePassword() async {
+    setState(() => _isLoading = true);
+
+    if (!_formKey.currentState.validate()) {
+      setState(() {
+        _isLoading = false;
+        _msg = 'Invalid information';
+      });
+      await new Future.delayed(Duration(seconds: 1));
+      setState(() {
+        _msg = null;
+      });
+      return;
+    }
+
+    _formKey.currentState.save();
+    debugPrint("$_password|$_newPassword");
+
+    try {
+      final response = await _apiService.changePassword(
+          _email, _password, _newPassword, _token);
+
+      setState(() {
+        _isLoading = false;
+        _msg = response.message;
+      });
+      await new Future.delayed(Duration(seconds: 1));
+      setState(() {
+        _msg = null;
+      });
+    } on MyHttpException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _msg = e.message;
+      });
+      await new Future.delayed(Duration(seconds: 1));
+      setState(() {
+        _msg = null;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _msg = 'Unknown error occurred';
+      });
+      await new Future.delayed(Duration(seconds: 1));
+      setState(() {
+        _msg = null;
+      });
+      throw e;
+    }
   }
 }

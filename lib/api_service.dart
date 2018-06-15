@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
 
 class Response {
   final String token;
@@ -19,11 +21,16 @@ class User {
   final String name;
   final String email;
   final DateTime createdAt;
+  final String imageUrl;
 
   User.fromJson(Map<String, dynamic> json)
       : name = json['name'],
         email = json['email'],
-        createdAt = DateTime.tryParse(json['created_at']) ?? new DateTime.now();
+        createdAt = DateTime.tryParse(json['created_at']) ?? new DateTime.now(),
+        imageUrl = json['image_url'];
+
+  @override
+  String toString() => '$name, $email, $imageUrl';
 }
 
 class MyHttpException extends HttpException {
@@ -54,13 +61,13 @@ class ApiService {
   Future<Response> registerUser(
       String name, String email, String password) async {
     final url = new Uri.https(baseUrl, '/users');
-    final body = {
+    final body = <String, String>{
       'name': name,
       'email': email,
       'password': password,
     };
-    final json = await NetworkUtils.post(url, body: body);
-    return Response.fromJson(json);
+    final decoded = await NetworkUtils.post(url, body: body);
+    return new Response.fromJson(decoded);
   }
 
   Future<User> getUserProfile(String email, String token) async {
@@ -85,7 +92,8 @@ class ApiService {
   // return message
   // special token and newPassword to reset password,
   // otherwise, send an email to email
-  resetPassword(String email, {String token, String newPassword}) async {
+  Future<Response> resetPassword(String email,
+      {String token, String newPassword}) async {
     final url = new Uri.https(baseUrl, '/users/$email/password');
     final task = token != null && newPassword != null
         ? NetworkUtils.post(url, body: {
@@ -95,6 +103,28 @@ class ApiService {
         : NetworkUtils.post(url);
     final json = await task;
     return Response.fromJson(json);
+  }
+
+  Future<User> uploadImage(File file, String email) async {
+    final url = new Uri.https(baseUrl, '/users/upload');
+    final stream = new http.ByteStream(file.openRead());
+    final length = await file.length();
+    final request = new http.MultipartRequest('POST', url)
+      ..fields['user'] = email
+      ..files.add(
+        new http.MultipartFile('my_image', stream, length, filename: path.basename(file.path)),
+      );
+    final streamedReponse = await request.send();
+    final statusCode = streamedReponse.statusCode;
+    final decoded = json.decode(await streamedReponse.stream.bytesToString());
+
+    debugPrint('decoded: $decoded');
+
+    if (statusCode < 200 || statusCode >= 300) {
+      throw MyHttpException(statusCode, decoded['message']);
+    }
+
+    return User.fromJson(decoded);
   }
 }
 
@@ -114,26 +144,34 @@ class NetworkUtils {
   }
 
   static Future post(Uri url,
-      {Map<String, String> headers, dynamic body}) async {
-    return _postOrPut(http.post, url, headers: headers);
+      {Map<String, String> headers, Map<String, String> body}) {
+    return _helper('POST', url, headers: headers, body: body);
   }
 
-  static Future put(Uri url, {Map<String, String> headers, body}) {
-    return _postOrPut(http.put, url, headers: headers);
-  }
-
-  static Future _postOrPut(function, Uri url,
-      {Map<String, String> headers, body}) async {
-    final response = await function(url, body: body, headers: headers);
-    final responseBody = response.body;
-    final statusCode = response.statusCode;
-    if (responseBody == null) {
-      throw MyHttpException(statusCode, 'Response body is null');
+  static Future _helper(String method, Uri url,
+      {Map<String, String> headers, Map<String, String> body}) async {
+    final request = new http.Request(method, url);
+    if (body != null) {
+      request.bodyFields = body;
     }
-    final decoded = json.decode(responseBody);
+    if (headers != null) {
+      request.headers.addAll(headers);
+    }
+    final streamedReponse = await request.send();
+
+    final statusCode = streamedReponse.statusCode;
+    final decoded = json.decode(await streamedReponse.stream.bytesToString());
+
+    debugPrint('decoded: $decoded');
+
     if (statusCode < 200 || statusCode >= 300) {
       throw MyHttpException(statusCode, decoded['message']);
     }
+
     return decoded;
+  }
+
+  static Future put(Uri url, {Map<String, String> headers, body}) {
+    return _helper('PUT', url, headers: headers, body: body);
   }
 }
